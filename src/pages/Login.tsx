@@ -12,7 +12,7 @@ export default function Login() {
   const [code, setCode] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!name || !code) {
@@ -20,14 +20,41 @@ export default function Login() {
       return;
     }
 
-    localStorage.setItem('expertName', name);
-    localStorage.setItem('expertCode', code);
-    
-    toast.success('Вход выполнен!', {
-      description: `Добро пожаловать, ${name}`
-    });
-    
-    navigate('/');
+    try {
+      const response = await fetch('https://functions.poehali.dev/38c82045-aea9-48e9-85ed-0cb8905d1e14', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, access_code: code })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        localStorage.setItem('expertId', data.id.toString());
+        localStorage.setItem('expertName', data.name);
+        localStorage.setItem('expertCode', data.access_code);
+        localStorage.setItem('expertRole', data.role);
+        
+        toast.success('Вход выполнен!', {
+          description: `Добро пожаловать, ${data.name}`
+        });
+        
+        if (data.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/');
+        }
+      } else {
+        const error = await response.json();
+        toast.error('Ошибка входа', {
+          description: error.error || 'Неверный код доступа'
+        });
+      }
+    } catch (error) {
+      toast.error('Ошибка подключения', {
+        description: 'Проверьте интернет-соединение'
+      });
+    }
   };
 
   return (

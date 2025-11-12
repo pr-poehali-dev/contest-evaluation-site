@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,53 +43,49 @@ const essayCriteria = [
   { name: 'Соответствие регламента (времени)', score: 0, maxScore: 5 }
 ];
 
-const mockSubmissions: Submission[] = [
-  {
-    id: 1,
-    participant: 'Анна Смирнова',
-    type: 'video',
-    title: 'Моя история успеха',
-    content: 'Видеовизитка о карьерном пути в IT',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    status: 'pending'
-  },
-  {
-    id: 2,
-    participant: 'Дмитрий Петров',
-    type: 'video',
-    title: 'Инновации в образовании',
-    content: 'Презентация проекта онлайн-обучения',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    status: 'pending'
-  },
-  {
-    id: 3,
-    participant: 'Мария Иванова',
-    type: 'essay',
-    title: 'Будущее технологий',
-    content: 'В эпоху стремительного технологического прогресса мы становимся свидетелями беспрецедентных изменений в обществе. Искусственный интеллект, машинное обучение и квантовые вычисления открывают перед человечеством новые горизонты возможностей.\n\nОднако с великими возможностями приходит и великая ответственность. Нам необходимо найти баланс между технологическим прогрессом и сохранением человеческих ценностей. Этика применения ИИ, защита данных и цифровое неравенство — вот те вызовы, которые требуют нашего внимания.\n\nЯ убеждена, что будущее за интеграцией технологий в повседневную жизнь, при этом человек должен оставаться в центре всех решений.',
-    status: 'reviewed',
-    rating: 85,
-    comment: 'Отличная работа, глубокий анализ'
-  },
-  {
-    id: 4,
-    participant: 'Алексей Козлов',
-    type: 'essay',
-    title: 'Экология и устойчивое развитие',
-    content: 'Современный мир стоит перед лицом экологического кризиса. Изменение климата, загрязнение окружающей среды и истощение природных ресурсов требуют немедленных действий от каждого из нас.\n\nУстойчивое развитие — это не просто модный тренд, а необходимость. Переход на возобновляемые источники энергии, циркулярная экономика и ответственное потребление должны стать нормой.\n\nКаждый человек может внести свой вклад: сортировка отходов, осознанное потребление, поддержка экологических инициатив. Вместе мы можем создать лучшее будущее для следующих поколений.',
-    status: 'pending'
-  }
-];
+const API_URLS = {
+  submissions: 'https://functions.poehali.dev/9ae0fab6-fcf6-4c8b-a319-098cbb2199ce',
+  ratings: 'https://functions.poehali.dev/bbdd29cb-50e8-4787-ba4c-6ecc844513f0'
+};
 
 export default function Index() {
   const navigate = useNavigate();
   const expertName = localStorage.getItem('expertName');
-  const [submissions] = useState<Submission[]>(mockSubmissions);
+  const expertId = localStorage.getItem('expertId');
+  const expertRole = localStorage.getItem('expertRole');
+  
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [comment, setComment] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadSubmissions();
+  }, []);
+
+  const loadSubmissions = async () => {
+    try {
+      const response = await fetch(API_URLS.submissions);
+      if (response.ok) {
+        const data = await response.json();
+        const mapped = data.map((s: any) => ({
+          id: s.id,
+          participant: s.participant,
+          type: s.type as 'video' | 'essay',
+          title: s.title,
+          content: s.content,
+          videoUrl: s.videoUrl,
+          status: s.status as 'pending' | 'reviewed',
+          rating: s.avgScore > 0 ? s.avgScore : undefined
+        }));
+        setSubmissions(mapped);
+      }
+    } catch (error) {
+      console.error('Failed to load submissions:', error);
+    }
+  };
 
   const handleSelectSubmission = (submission: Submission) => {
     setSelectedSubmission(submission);
@@ -103,20 +99,47 @@ export default function Index() {
   const totalCount = submissions.length;
   const progress = (reviewedCount / totalCount) * 100;
 
-  const handleSubmitRating = () => {
-    if (!selectedSubmission) return;
+  const handleSubmitRating = async () => {
+    if (!selectedSubmission || !expertId) return;
     
     const totalScore = criteria.reduce((sum, c) => sum + c.score, 0);
     
-    toast.success('Оценка сохранена!', {
-      description: `${selectedSubmission.participant} - ${totalScore} баллов`
-    });
-    setComment('');
+    setLoading(true);
+    try {
+      const response = await fetch(API_URLS.ratings, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Expert-Id': expertId
+        },
+        body: JSON.stringify({
+          submission_id: selectedSubmission.id,
+          informativeness: criteria[0].score,
+          uniqueness: criteria[1].score,
+          theme_compliance: criteria[2].score,
+          regulation_compliance: criteria[3].score,
+          comment: comment
+        })
+      });
+
+      if (response.ok) {
+        toast.success('Оценка сохранена!', {
+          description: `${selectedSubmission.participant} - ${totalScore} баллов`
+        });
+        setComment('');
+        await loadSubmissions();
+      } else {
+        toast.error('Ошибка сохранения оценки');
+      }
+    } catch (error) {
+      toast.error('Ошибка подключения');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('expertName');
-    localStorage.removeItem('expertCode');
+    localStorage.clear();
     navigate('/login');
   };
 
@@ -150,6 +173,16 @@ export default function Index() {
                 <p className="text-xs text-slate-400">Проверено</p>
                 <p className="text-lg font-semibold">{reviewedCount} / {totalCount}</p>
               </div>
+              {expertRole === 'admin' && (
+                <Button 
+                  variant="outline" 
+                  className="border-white/20 text-white hover:bg-white/10"
+                  onClick={() => navigate('/admin')}
+                >
+                  <Icon name="Shield" size={18} className="mr-2" />
+                  Админка
+                </Button>
+              )}
               <Button variant="outline" className="border-white/20 text-white hover:bg-white/10" onClick={handleLogout}>
                 <Icon name="LogOut" size={18} className="mr-2" />
                 Выйти

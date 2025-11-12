@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,12 @@ import { Textarea } from '@/components/ui/textarea';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 
+interface Criteria {
+  name: string;
+  score: number;
+  maxScore: number;
+}
+
 interface Submission {
   id: number;
   participant: string;
@@ -17,9 +24,24 @@ interface Submission {
   content: string;
   videoUrl?: string;
   rating?: number;
+  criteria?: Criteria[];
   comment?: string;
   status: 'pending' | 'reviewed';
 }
+
+const videoCriteria = [
+  { name: 'Информативность', score: 0, maxScore: 7 },
+  { name: 'Уникальность', score: 0, maxScore: 7 },
+  { name: 'Соответствие заданной теме', score: 0, maxScore: 5 },
+  { name: 'Соответствие регламента (времени)', score: 0, maxScore: 5 }
+];
+
+const essayCriteria = [
+  { name: 'Информативность', score: 0, maxScore: 7 },
+  { name: 'Уникальность', score: 0, maxScore: 7 },
+  { name: 'Соответствие заданной теме', score: 0, maxScore: 5 },
+  { name: 'Соответствие регламента (времени)', score: 0, maxScore: 5 }
+];
 
 const mockSubmissions: Submission[] = [
   {
@@ -61,11 +83,19 @@ const mockSubmissions: Submission[] = [
 ];
 
 export default function Index() {
+  const navigate = useNavigate();
+  const expertName = localStorage.getItem('expertName');
   const [submissions] = useState<Submission[]>(mockSubmissions);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
-  const [rating, setRating] = useState<number[]>([50]);
+  const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [comment, setComment] = useState('');
+
+  const handleSelectSubmission = (submission: Submission) => {
+    setSelectedSubmission(submission);
+    const defaultCriteria = submission.type === 'video' ? videoCriteria : essayCriteria;
+    setCriteria(submission.criteria || JSON.parse(JSON.stringify(defaultCriteria)));
+  };
 
   const videoSubmissions = submissions.filter(s => s.type === 'video');
   const essaySubmissions = submissions.filter(s => s.type === 'essay');
@@ -76,11 +106,28 @@ export default function Index() {
   const handleSubmitRating = () => {
     if (!selectedSubmission) return;
     
+    const totalScore = criteria.reduce((sum, c) => sum + c.score, 0);
+    
     toast.success('Оценка сохранена!', {
-      description: `${selectedSubmission.participant} - ${rating[0]} баллов`
+      description: `${selectedSubmission.participant} - ${totalScore} баллов`
     });
     setComment('');
   };
+
+  const handleLogout = () => {
+    localStorage.removeItem('expertName');
+    localStorage.removeItem('expertCode');
+    navigate('/login');
+  };
+
+  const updateCriteriaScore = (index: number, value: number) => {
+    const newCriteria = [...criteria];
+    newCriteria[index].score = value;
+    setCriteria(newCriteria);
+  };
+
+  const totalScore = criteria.reduce((sum, c) => sum + c.score, 0);
+  const maxTotalScore = criteria.reduce((sum, c) => sum + c.maxScore, 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -96,12 +143,16 @@ export default function Index() {
             </div>
             <div className="flex items-center gap-6">
               <div className="text-right">
+                <p className="text-xs text-slate-400">Эксперт</p>
+                <p className="text-sm font-medium">{expertName}</p>
+              </div>
+              <div className="text-right">
                 <p className="text-xs text-slate-400">Проверено</p>
                 <p className="text-lg font-semibold">{reviewedCount} / {totalCount}</p>
               </div>
-              <Button variant="outline" className="border-white/20 text-white hover:bg-white/10">
-                <Icon name="Settings" size={18} className="mr-2" />
-                Настройки
+              <Button variant="outline" className="border-white/20 text-white hover:bg-white/10" onClick={handleLogout}>
+                <Icon name="LogOut" size={18} className="mr-2" />
+                Выйти
               </Button>
             </div>
           </div>
@@ -184,7 +235,7 @@ export default function Index() {
                       key={submission.id}
                       className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors cursor-pointer"
                       onClick={() => {
-                        setSelectedSubmission(submission);
+                        handleSelectSubmission(submission);
                         setActiveTab(submission.type === 'video' ? 'videos' : 'essays');
                       }}
                     >
@@ -234,7 +285,7 @@ export default function Index() {
                           ? 'border-primary bg-accent shadow-md'
                           : 'hover:bg-accent/50'
                       }`}
-                      onClick={() => setSelectedSubmission(submission)}
+                      onClick={() => handleSelectSubmission(submission)}
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -268,23 +319,30 @@ export default function Index() {
                     </div>
                     
                     <div className="space-y-4 pt-4 border-t">
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">
-                          Оценка: <span className="text-2xl text-primary ml-2">{rating[0]}</span> баллов
-                        </label>
-                        <Slider
-                          value={rating}
-                          onValueChange={setRating}
-                          max={100}
-                          step={5}
-                          className="mb-2"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>0</span>
-                          <span>50</span>
-                          <span>100</span>
+                      <div className="bg-slate-50 p-4 rounded-lg mb-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-semibold">Общая оценка:</span>
+                          <span className="text-3xl font-bold text-primary">{totalScore} / {maxTotalScore}</span>
                         </div>
                       </div>
+
+                      {criteria.map((criterion, index) => (
+                        <div key={index} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium">{criterion.name}</label>
+                            <span className="text-lg font-semibold text-primary">
+                              {criterion.score} / {criterion.maxScore}
+                            </span>
+                          </div>
+                          <Slider
+                            value={[criterion.score]}
+                            onValueChange={(value) => updateCriteriaScore(index, value[0])}
+                            max={criterion.maxScore}
+                            step={1}
+                            className="mb-1"
+                          />
+                        </div>
+                      ))}
 
                       <div>
                         <label className="text-sm font-medium mb-2 block">Комментарий</label>
@@ -292,7 +350,7 @@ export default function Index() {
                           placeholder="Ваша оценка работы..."
                           value={comment}
                           onChange={(e) => setComment(e.target.value)}
-                          rows={4}
+                          rows={3}
                         />
                       </div>
 
@@ -323,7 +381,7 @@ export default function Index() {
                           ? 'border-primary bg-accent shadow-md'
                           : 'hover:bg-accent/50'
                       }`}
-                      onClick={() => setSelectedSubmission(submission)}
+                      onClick={() => handleSelectSubmission(submission)}
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -368,23 +426,30 @@ export default function Index() {
                       </div>
                     ) : (
                       <div className="space-y-4 pt-4 border-t">
-                        <div>
-                          <label className="text-sm font-medium mb-3 block">
-                            Оценка: <span className="text-2xl text-primary ml-2">{rating[0]}</span> баллов
-                          </label>
-                          <Slider
-                            value={rating}
-                            onValueChange={setRating}
-                            max={100}
-                            step={5}
-                            className="mb-2"
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>0</span>
-                            <span>50</span>
-                            <span>100</span>
+                        <div className="bg-slate-50 p-4 rounded-lg mb-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="font-semibold">Общая оценка:</span>
+                            <span className="text-3xl font-bold text-primary">{totalScore} / {maxTotalScore}</span>
                           </div>
                         </div>
+
+                        {criteria.map((criterion, index) => (
+                          <div key={index} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-sm font-medium">{criterion.name}</label>
+                              <span className="text-lg font-semibold text-primary">
+                                {criterion.score} / {criterion.maxScore}
+                              </span>
+                            </div>
+                            <Slider
+                              value={[criterion.score]}
+                              onValueChange={(value) => updateCriteriaScore(index, value[0])}
+                              max={criterion.maxScore}
+                              step={1}
+                              className="mb-1"
+                            />
+                          </div>
+                        ))}
 
                         <div>
                           <label className="text-sm font-medium mb-2 block">Комментарий</label>
@@ -392,7 +457,7 @@ export default function Index() {
                             placeholder="Ваша оценка работы..."
                             value={comment}
                             onChange={(e) => setComment(e.target.value)}
-                            rows={4}
+                            rows={3}
                           />
                         </div>
 
